@@ -92,3 +92,5 @@ ENV/
 local/*
 */local/*
 tmp
+*.png
+orig/*
