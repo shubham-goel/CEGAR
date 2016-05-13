@@ -6,6 +6,8 @@ import itertools
 
 import pickle
 
+import matplotlib.pyplot as plt
+
 def GenerateSetting(n, m, e, weight=False, save=False, load=False, filename=None):
 	'''
 	:param n: the number of vertices
@@ -22,6 +24,12 @@ def GenerateSetting(n, m, e, weight=False, save=False, load=False, filename=None
 		G = networkx.dense_gnm_random_graph(n, e)
 		M = []
 
+	# Printing Graph
+	print("Nodes of graph: ")
+	print(G.nodes())
+	print("Edges of graph: ")
+	print(G.edges())
+
 	V = dict([(i,Vertex(i)) for i in range(n)])
 	E = []
 	for e in G.edges_iter():
@@ -36,6 +44,21 @@ def GenerateSetting(n, m, e, weight=False, save=False, load=False, filename=None
 		M = [Message(V[s], V[t], name) for (s,t,name) in M]
 
 
+	# Printing Graph
+	# networkx.draw(G)
+	pos=networkx.spring_layout(G)
+	networkx.draw_networkx_nodes(G,pos,
+                   nodelist=range(n),
+                   node_color='r',
+                   node_size=500,
+               alpha=0.8)
+	networkx.draw_networkx_edges(G,pos,width=1.0,alpha=0.5)
+	labels = {}
+	for temp in range(n):
+		labels[temp] = temp
+	networkx.draw_networkx_labels(G,pos,labels,font_size=16)
+	plt.savefig("graph.png") # save as png
+	# plt.show() # display
 
 	FCv = {} # m -> the vertices in FC[m]
 	FCe = {} # m --> the edges in FV
@@ -51,12 +74,21 @@ def GenerateSetting(n, m, e, weight=False, save=False, load=False, filename=None
 			t = M[i].t.name
 			m = M[i]
 		else:
-			s = random.randint(0, n-1)
-			t = s
-			while t == s:
-				t = random.randint(0,n-1)
+			# s = random.randint(0, n-1)
+			# t = s
+			# while t == s:
+			# 	t = random.randint(0,n-1)
 
+			# selecting graph diameter for all messages
+			longest_path=[]
+			for start_tmp in range(n):
+				for end_tmp in range(n):
+					p = networkx.shortest_path(G, source=start_tmp, target=end_tmp)
+					if len(p) > len(longest_path):
+						longest_path = p
 
+			s = longest_path[0]
+			t = longest_path[-1]
 
 			m = Message(V[s], V[t], i)
 			M.append(m)
