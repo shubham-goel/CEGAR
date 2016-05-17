@@ -19,28 +19,30 @@ do
 		do
 			start_timeout=$((2*$messages-5))
 			end_timeout=$((2*$messages+5))
-			for timeout in `seq $start_timeout $end_timeout`;
+			for timeout in `seq $end_timeout -1 $start_timeout`;
 			do
-				start_l1=$(($messages/2))
-				start_l=$( printf "%.0f" $start_l1 )
-				end_l=$(($messages-3))
-				for l in `seq $start_l $end_l`;
-				do
-					directory="$nodes-$messages-$edges-$timeout-$k-$l"
-					echo "Progress : $directory::(10-20)-(10-15)-($start_edges-$end_edges)-($start_timeout-$end_timeout)-$k-($start_l-$end_l)"
-					python ScheduleTwoPathsCEGAR.py $nodes $messages $edges $timeout $k $l --quiet -d > output.curr
-					if [ $? -ne 0 ]; then
-						prefix="results/not_interesting"
-					else
-						prefix="results/interesting"
-					fi
-					mkdir "$prefix/$directory"
-					cp -r schedules "$prefix/$directory/"
-					touch "$prefix/$directory/output"
-					touch "$prefix/$directory/setting"
-					cat output.curr > "$prefix/$directory/output"
-					cat setting.curr > "$prefix/$directory/setting"
-				done
+				l1=$(($messages/2))
+				l=$( printf "%.0f" $l1 )
+
+				directory="$nodes-$messages-$edges-$timeout-$k-$l"
+				echo "Progress : $directory::(10-20)-(10-15)-($start_edges-$end_edges)-($end_timeout-$start_timeout)-$k-$l"
+				python ScheduleTwoPathsCEGAR.py $nodes $messages $edges $timeout $k $l --quiet -d > output.curr
+				if [ $? -ne 0 ]; then
+					prefix="results/not_interesting"
+				else
+					prefix="results/interesting"
+				fi
+				mkdir "$prefix/$directory"
+				cp -r schedules "$prefix/$directory/"
+				touch "$prefix/$directory/output"
+				touch "$prefix/$directory/setting"
+				cat output.curr > "$prefix/$directory/output"
+				cat setting.curr > "$prefix/$directory/setting"
+
+				target="schedules/"
+				if ! find "$target" -mindepth 1 -print -quit | grep -q .; then
+				    break
+				fi
 			done
 		done
 	done
