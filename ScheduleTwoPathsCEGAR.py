@@ -1,5 +1,6 @@
 import sys
 import itertools
+import subprocess
 
 sys.path.append("bin")
 from z3 import *
@@ -20,6 +21,10 @@ vars = Vars()
 g = None
 
 
+def save_to_file(S,filename):
+	file = open(filename, 'w')
+	pickle.dump(S, file)
+	file.close()
 
 def existsSchedule(M, t, s=None):
 	if not s:
@@ -356,7 +361,7 @@ def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
 					print 'breaking at', i
 					break
 				else:
-					printProgress(GenerateSchedule(b, M, t, S), M, t, lval, 1)
+					# printProgress(GenerateSchedule(b, M, t, S), M, t, lval, 1)
 					sOpt.pop() # this will pop the sum constraint. The other constraints don't change.
 			l.append(And(psi))
 		prevC = curC
@@ -414,17 +419,22 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 		S = GenerateSchedule(mdl, M, t)
 
 		#optimization: first try to find a fault seq in which the crashes are at time 0.
-		#print 'start WorstFaultSeq with immediate faults', time.time()
+		# print 'start WorstFaultSeq with immediate faults', time.time()
 		print 'start WorstFaultSeq', time.time()
 		mdl = WorstFaultSeq(S, M, t, l, k, immediatefailure=True)
-		#print 'end WorstFaultSeq with immediate faults', time.time()
+		# print 'end WorstFaultSeq with immediate faults', time.time()
 		if not mdl:
 			print 'no fault seq with immediate failures!', time.time()
 			mdl = WorstFaultSeq(S, M, t, l, k)
 			print 'end second WorstFaultSeq', time.time()
 
 		if not mdl:
-			return S
+			print 'FOUND (k-l) resistant schedule', "k=",k,"l=",l
+			print S
+			save_to_file(S,'schedules/Schedule_k'+str(k)+'_l'+str(l))
+			l+=1
+			mdl = s.model()
+			continue
 
 		if showProgress:
 			printProgress(S, M, t, l, k)
@@ -435,6 +445,7 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 		#print '$$$$$$$$$$$\n\n'
 
 		if addConstraint(s, mdl, M, t, optimize, l, S=S) is False:
+			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
 
 		print 'start check()', time.time()
@@ -444,6 +455,7 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 		if b == sat:
 			mdl = s.model()
 		else:
+			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
 
 
@@ -630,7 +642,7 @@ def testOpt():
 import time
 from Graph import GenerateSetting
 import pickle
-def main(n, m, e, t, l, k, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
+def main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
 	print 'start setup', time.time()
 	global g, FCv, FCe, SCv, SCe, UFSv
 	#(g, M, FCv, FCe, SCv, SCe, UFSv) = GenerateSetting(20, 20, 40)
@@ -659,13 +671,12 @@ def main(n, m, e, t, l, k, filename=None, save=False, load=False, optimize=False
 
 from optparse import OptionParser
 
-
-if __name__ == '__main__':
+def parse_arguments():
 	parser = OptionParser()
-	parser.add_option('-t', dest="t",
+	parser.add_option('-t','--timeout', dest="t",
 				  help="The timeout, should be an integer")
-	parser.add_option("-l", dest="l",
-				  help="The guarantee on the number of messages that should arrive.")
+	# parser.add_option("-l", dest="l",
+	# 			  help="The guarantee on the number of messages that should arrive.")
 	parser.add_option("-k", dest="k",
 				  help="The number of edges that are allowed to crash.")
 	parser.add_option("-n", dest="n",
@@ -674,11 +685,60 @@ if __name__ == '__main__':
 				  help="The number of messages in the network.")
 	parser.add_option("-e", dest="e",
 				  help="The number of edges in the network.")
-	(options, args) = parser.parse_args()
 
-	filename = 'tmp'
+	parser.add_option("-l","--load",
+                  action="store_true", dest="load", default=False,
+                  help="Load setting from file")
+	parser.add_option("-b","--brute",
+                  action="store_false", dest="optimize", default=True,
+                  help="Load setting from file")
+	parser.add_option("-q","--quiet",
+                  action="store_false", dest="showProgress", default=False,
+                  help="Dont show progress")
+	parser.add_option("--nw","--no_weight",
+                  action="store_false", dest="weight", default=True,
+                  help="Load setting from file")
+	parser.add_option("-d","--diff",
+                  action="store_true", dest="diff", default=False,
+                  help="Check if schedules generated are different")
+	return parser.parse_args()
+
+if __name__ == '__main__':
+	(options, args) = parse_arguments()
+
+	save = not options.load
+	load = options.load
+	optimize = options.optimize
+	showProgress = options.showProgress
+	weight = options.weight
+	diff = options.diff
+
+	filename = 'setting.curr'
+
+	# Remove old Schedules
+	cmd = "rm -r schedules/"
+	subprocess.call([cmd],shell=True)
+	cmd = "mkdir schedules/"
+	subprocess.call([cmd],shell=True)
 
 # def main(n, m, e, t, l, k, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
 	# main(int(options.n), int(options.m), int(options.e), int(options.t), int(options.l), int(options.k))
 	# main(10, 30, 15, 7, 26, 1, filename, save=True, load=False, optimize=True, showProgress=True, weight=True)
-	main(int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]), filename, save=False, load=True, optimize=True, showProgress=True, weight=True)
+	main(int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]), 
+		filename, save=save, load=load, optimize=optimize, showProgress=showProgress, weight=weight)
+
+	if diff:
+		from diff_script import *
+
+		print "##################################"
+		print "Checking if Schedules found differ"
+		print "##################################"
+		k = int(sys.argv[5])
+		l = int(sys.argv[6])
+		differed = diff_script(k,l)
+		print "\n\nEnded script!"
+
+		if differed:
+			sys.exit(0)
+		else:
+			sys.exit(1)

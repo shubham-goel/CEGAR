@@ -91,6 +91,7 @@ ENV/
 # Local Files
 local/*
 */local/*
-tmp
+*.curr
 *.png
-orig/*
+schedules/*
+results/*

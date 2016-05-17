@@ -46,18 +46,18 @@ def GenerateSetting(n, m, e, weight=False, save=False, load=False, filename=None
 
 	# Printing Graph
 	# networkx.draw(G)
-	pos=networkx.spring_layout(G)
-	networkx.draw_networkx_nodes(G,pos,
-                   nodelist=range(n),
-                   node_color='r',
-                   node_size=500,
-               alpha=0.8)
-	networkx.draw_networkx_edges(G,pos,width=1.0,alpha=0.5)
-	labels = {}
-	for temp in range(n):
-		labels[temp] = temp
-	networkx.draw_networkx_labels(G,pos,labels,font_size=16)
-	plt.savefig("graph.png") # save as png
+	# pos=networkx.spring_layout(G)
+	# networkx.draw_networkx_nodes(G,pos,
+ #                   nodelist=range(n),
+ #                   node_color='r',
+ #                   node_size=500,
+ #               alpha=0.8)
+	# networkx.draw_networkx_edges(G,pos,width=1.0,alpha=0.5)
+	# labels = {}
+	# for temp in range(n):
+	# 	labels[temp] = temp
+	# networkx.draw_networkx_labels(G,pos,labels,font_size=16)
+	# plt.savefig("graph.png") # save as png
 	# plt.show() # display
 
 	FCv = {} # m -> the vertices in FC[m]
