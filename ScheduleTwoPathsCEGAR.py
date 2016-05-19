@@ -6,8 +6,6 @@ sys.path.append("bin")
 from z3 import *
 
 from Objects import *
-from Optimization import ExistsSchedGivenConfig
-
 
 
 FC = {} #(m,v) --> v
@@ -20,26 +18,27 @@ UFSv = {} # the union of vertices in FCv and SCv
 vars = Vars()
 g = None
 
+from Optimization import ExistsSchedGivenConfig
 
 def save_to_file(S,filename):
 	file = open(filename, 'w')
 	pickle.dump(S, file)
 	file.close()
 
-def existsSchedule(M, t, s=None):
+def existsSchedule(stng, M, t, s=None):
 	if not s:
 		s = Solver()
 
 	for m in M:
-		for e in FCe[m]:
+		for e in stng.FCe[m]:
 			for i in range(t):
-				vars.setSched(e, m, i)
+				stng.vars.setSched(e, m, i)
 
 	# a message is sent on e only if it arrived at e.s at a previous time
 	for m in M:
-		for e in FCe[m]:
+		for e in stng.FCe[m]:
 			#find the previous edge on the first path
-			for p in FCe[m]:
+			for p in stng.FCe[m]:
 				if p.t == e.s:
 					break
 			else:
@@ -47,53 +46,53 @@ def existsSchedule(M, t, s=None):
 				continue
 
 			for i in range(1,t):
-				o = Or([vars.sched(p, m, j) for j in range(i)])
-				s.add(Implies(vars.sched(e,m,i), o))
+				o = Or([stng.vars.sched(p, m, j) for j in range(i)])
+				s.add(Implies(stng.vars.sched(e,m,i), o))
 
 	# a message only exits through its origin
 	for m in M:
-		s.add(And([Not(vars.sched(e, m, 0)) for e in FCe[m] if e.s != m.s]))
+		s.add(And([Not(stng.vars.sched(e, m, 0)) for e in stng.FCe[m] if e.s != m.s]))
 
 
 
 	#all messages arrive
 	for m in M:
-		for e in FCe[m]:
+		for e in stng.FCe[m]:
 			if e.t == m.t:
 				break
 
-		s.add(Or([vars.sched(e, m, i) for i in range(t)]))
+		s.add(Or([stng.vars.sched(e, m, i) for i in range(t)]))
 
 	# two messages can't be sent on the same link at the same time
 	for m in M:
-		for e in FCe[m]:
+		for e in stng.FCe[m]:
 			for i in range(t):
-				s.add(Implies(vars.sched(e, m, i), Not(Or([vars.sched(e, m2,i) for m2 in M if m2 != m and e in FCe[m2]]))))
+				s.add(Implies(stng.vars.sched(e, m, i), Not(Or([stng.vars.sched(e, m2,i) for m2 in M if m2 != m and e in stng.FCe[m2]]))))
 
 	# A message can only exit a vertex once
 	for m in M:
-		for e in FCe[m]:
+		for e in stng.FCe[m]:
 			for i in range(t-1):
-				o = Or([vars.sched(e, m, j) for j in range(i+1, t)])
-				s.add(Implies(vars.sched(e, m, i), Not(o)))
+				o = Or([stng.vars.sched(e, m, j) for j in range(i+1, t)])
+				s.add(Implies(stng.vars.sched(e, m, i), Not(o)))
 
 
 	if s.check() == sat:
 		return s.model()
 
 
-def GenerateSchedule(mdl, M, t, Sold=None):
+def GenerateSchedule(stng, mdl, M, t, Sold=None):
 	S = Schedule()
 	for m in M:
 		b=False
-		for e in FCe[m]:
+		for e in stng.FCe[m]:
 			for i in range(t):
-				if is_true(mdl[vars.sched(e,m,i)]):
+				if is_true(mdl[stng.vars.sched(e,m,i)]):
 					S.add(e, i, m)
 					b=True
 
 		if not b and Sold:
-			for e in FCe[m]:
+			for e in stng.FCe[m]:
 				for i in range(t):
 					if Sold(e,i) == m:
 						S.add(e, i, m)
@@ -104,47 +103,47 @@ def GenerateSchedule(mdl, M, t, Sold=None):
 
 
 # is there a fault sequence that performs at most k faults and in which less than l messages arrive
-def WorstFaultSeq(S, M, t, l, k, immediatefailure=False, returnSolver=False):
+def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=False):
 	s = Solver()
 
 	# edge e fails at time i
 	for e in g.E:
 		for i in range(t):
-			vars.setCrash(e, i)
+			stng.vars.setCrash(e, i)
 
 			# once an edge crashes, it stays down
 			if i > 0:
-				s.add(Implies(vars.crash(e, i-1), vars.crash(e, i)))
+				s.add(Implies(stng.vars.crash(e, i-1), stng.vars.crash(e, i)))
 
 		#require that if an edge fails, it fails at time 0
 		if immediatefailure:
-			s.add(Implies(vars.crash(e, t-1), vars.crash(e, 0)))
+			s.add(Implies(stng.vars.crash(e, t-1), stng.vars.crash(e, 0)))
 
 
 
 	# the total number of crashes is at most k
-	s.add(Sum([If(vars.crash(e,t-1), 1, 0) for e in g.E]) <= k)
+	s.add(Sum([If(stng.vars.crash(e,t-1), 1, 0) for e in g.E]) <= k)
 
 
 
 	# configuration variables -- m is on v at time i.
 	for m in M:
-		for v in UFSv[m]:
+		for v in stng.UFSv[m]:
 			for i in range(t+1):
-				vars.setConfig(v,m,i)
+				stng.vars.setConfig(v,m,i)
 
 
 
 	# messages start at their origin
 	for m in M:
-		s.add(getUniqueConfigConstr(m.s, m, 0))
+		s.add(getUniqueConfigConstr(stng, m.s, m, 0))
 
 
 	for m in M:
-		for v in FCv[m]:
+		for v in stng.FCv[m]:
 			for i in range(t):
 				#if a message reaches its destination, it stays there.
-				s.add(Implies(vars.config(m.t, m, i), getUniqueConfigConstr(m.t, m, i+1)))
+				s.add(Implies(stng.vars.config(m.t, m, i), getUniqueConfigConstr(stng, m.t, m, i+1)))
 
 				e = g(v, v.nextF(m))
 				if not e:
@@ -153,48 +152,48 @@ def WorstFaultSeq(S, M, t, l, k, immediatefailure=False, returnSolver=False):
 
 				if S(e, i) == m:
 					# m is on v and edge e has not crashed. Move according to the schedule
-					a = And(vars.config(v, m, i), Not(vars.crash(e,i)))
-					s.add(Implies(a, getUniqueConfigConstr(e.t, m, i+1)))
+					a = And(stng.vars.config(v, m, i), Not(stng.vars.crash(e,i)))
+					s.add(Implies(a, getUniqueConfigConstr(stng, e.t, m, i+1)))
 				else:
 					# m is on v and edge e has not crashed but it is not time to move. Wait.
-					a = And(vars.config(v, m, i), Not(vars.crash(e,i)))
-					s.add(Implies(a, getUniqueConfigConstr(v, m, i+1)))
+					a = And(stng.vars.config(v, m, i), Not(stng.vars.crash(e,i)))
+					s.add(Implies(a, getUniqueConfigConstr(stng, v, m, i+1)))
 
 				if not v.nextS(m):
 					#no fall back edge, do nothing.
-					s.add(Implies(And(vars.config(v, m, i), vars.crash(e,i)), getUniqueConfigConstr(v, m, i+1)))
+					s.add(Implies(And(stng.vars.config(v, m, i), stng.vars.crash(e,i)), getUniqueConfigConstr(stng, v, m, i+1)))
 					continue
 
 				#m is on v and e has crashed.
-				x = And(vars.config(v,m,i), vars.crash(e, i))
+				x = And(stng.vars.config(v,m,i), stng.vars.crash(e, i))
 
 				# the fallback edge is free
-				fr = free(g(v, v.nextS(m)), m, M, S, i)
+				fr = free(stng, g(v, v.nextS(m)), m, M, S, i)
 				# if it is not free, stay
-				stay = Implies(Not(fr), getUniqueConfigConstr(v, m, i+1))
+				stay = Implies(Not(fr), getUniqueConfigConstr(stng, v, m, i+1))
 				#if it is free, use it
-				move = Implies(fr, getUniqueConfigConstr(v.nextS(m), m, i+1))
+				move = Implies(fr, getUniqueConfigConstr(stng, v.nextS(m), m, i+1))
 				s.add(Implies(x, stay))
 				s.add(Implies(x, move))
 
 	for m in M:
-		for v in SCv[m]:
+		for v in stng.SCv[m]:
 			#handled in the above
-			if v in FCv[m]: continue
+			if v in stng.FCv[m]: continue
 
 			if not g(v, v.nextS(m)): continue
 
 			for i in range(t):
 				#m is on v
-				x = vars.config(v,m,i)
+				x = stng.vars.config(v,m,i)
 
 				# the fallback edge is free
-				fr = free(g(v, v.nextS(m)), m, M, S, i)
+				fr = free(stng, g(v, v.nextS(m)), m, M, S, i)
 
 				# if it is not free, stay
-				stay = Implies(Not(fr), getUniqueConfigConstr(v, m, i+1))
+				stay = Implies(Not(fr), getUniqueConfigConstr(stng, v, m, i+1))
 				#if it is free, use it
-				move = Implies(fr, getUniqueConfigConstr(v.nextS(m), m, i+1))
+				move = Implies(fr, getUniqueConfigConstr(stng, v.nextS(m), m, i+1))
 				s.add(Implies(x, stay))
 				s.add(Implies(x, move))
 
@@ -203,7 +202,7 @@ def WorstFaultSeq(S, M, t, l, k, immediatefailure=False, returnSolver=False):
 		s.push()
 
 	#less than l messages arrive
-	s.add(Sum([If(vars.config(m.t, m, t), 1, 0) for m in M]) < l)
+	s.add(Sum([If(stng.vars.config(m.t, m, t), 1, 0) for m in M]) < l)
 
 	print 'worst faults start check', time.time()
 	if s.check() == sat:
@@ -220,12 +219,12 @@ def WorstFaultSeq(S, M, t, l, k, immediatefailure=False, returnSolver=False):
 
 
 
-def getUniqueConfigConstr(v,m,i):
+def getUniqueConfigConstr(stng, v,m,i):
 	'''
 	Returns a constraint that guarantees that m is on v at time i, and not on any other vertex.
 	'''
-	notThere = And([Not(vars.config(u, m, i)) for u in UFSv[m] if u != v])
-	here = vars.config(v, m, i)
+	notThere = And([Not(stng.vars.config(u, m, i)) for u in stng.UFSv[m] if u != v])
+	here = stng.vars.config(v, m, i)
 	return And(here, notThere)
 
 
@@ -234,7 +233,7 @@ def getUniqueConfigConstr(v,m,i):
 
 
 
-def free(e, m, M, S, i):
+def free(stng, e, m, M, S, i):
 	'''
 	returns False if the edge is not free according to the schedule
 	return a constraint if it is
@@ -262,22 +261,22 @@ def free(e, m, M, S, i):
 		e2 = g(e.s, (e.s).nextF(m2))
 		if e2:
 			#if m2 is on e.s and e2 has crashed, m2 will attempt to use e, so it is not free.
-			n1 = Not(vars.config(e.s, m2, i))
-			n2 = Not(vars.crash(e2, i))
+			n1 = Not(stng.vars.config(e.s, m2, i))
+			n2 = Not(stng.vars.crash(e2, i))
 			l.append(Or(n1, n2))
 		else:
-			assert(e.s == m2.t or e.s not in FCv[m2])
+			assert(e.s == m2.t or e.s not in stng.FCv[m2])
 			#Since e.s is a second choice vertex, if m2 is on e.s, m2 will attempt to use e.
-			n1 = Not(vars.config(e.s, m2, i))
+			n1 = Not(stng.vars.config(e.s, m2, i))
 			l.append(n1)
 
 	#edge e has not crashed
-	l.append(Not(vars.crash(e, i)))
+	l.append(Not(stng.vars.crash(e, i)))
 	return And(l)
 
 
 
-def getPsiv(T, m, v, u, i, M):
+def getPsiv(stng, T, m, v, u, i, M):
 	'''
 	Assuming m is on v at time i, and the set of edges that fail are T, returns a predicate that ensures that m moves to u.
 	'''
@@ -287,13 +286,13 @@ def getPsiv(T, m, v, u, i, M):
 	e = g(v, v.nextF(m))
 	# If the edge (v,u) is on the first path, m should be scheduled on it
 	if u == v.nextF(m):
-		return vars.sched(e, m, i-1)
+		return stng.vars.sched(e, m, i-1)
 
 	# if m is on the first path and the next edge has not crashed, but m does not move, then it should not be scheduled
-	elif v in FCv[m] and u == v and e not in T:
-		return Not(vars.sched(e, m, i-1))
+	elif v in stng.FCv[m] and u == v and e not in T:
+		return Not(stng.vars.sched(e, m, i-1))
 
-	elif v in FCv[m] and u == v and e in T:
+	elif v in stng.FCv[m] and u == v and e in T:
 		return None
 
 	# if m moves to the second choice, that edge should be free
@@ -301,11 +300,11 @@ def getPsiv(T, m, v, u, i, M):
 		l = []
 		for m2 in M:
 			if v.nextF(m2) == u:
-				l.append(Not(vars.sched(g(v, u), m2, i-1)))
+				l.append(Not(stng.vars.sched(g(v, u), m2, i-1)))
 
 		return And(l) if l else None
 
-	elif u in SCv[m] and u == v:
+	elif u in stng.SCv[m] and u == v:
 		return None
 
 	else:
@@ -314,7 +313,7 @@ def getPsiv(T, m, v, u, i, M):
 
 
 
-def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
+def addConstraint(stng, s, mdl, M, t, optimize=False, lval=None, S=None):
 	l = []
 	prevC = [(m, m.s) for m in M]
 	prevT = []
@@ -328,25 +327,25 @@ def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
 		curT = []
 
 		for e in g.E:
-			if is_true(mdl[vars.crash(e, i)]):
+			if is_true(mdl[stng.vars.crash(e, i)]):
 				curT.append(e)
 
 		for (m,v) in prevC:
 			# the message either doesn't move
-			if is_true(mdl[vars.config(v, m, i)]):
+			if is_true(mdl[stng.vars.config(v, m, i)]):
 				curC.append((m, v))
-				p = getPsiv(prevT, m, v, v, i, M)
+				p = getPsiv(stng, prevT, m, v, v, i, M)
 
 			#or moves to the first choice
-			elif v.nextF(m) and is_true(mdl[vars.config(v.nextF(m), m, i)]):
+			elif v.nextF(m) and is_true(mdl[stng.vars.config(v.nextF(m), m, i)]):
 				curC.append((m, v.nextF(m)))
-				p = getPsiv(prevT, m, v, v.nextF(m), i, M)
+				p = getPsiv(stng, prevT, m, v, v.nextF(m), i, M)
 
 
 			#or moves to the second choice
-			elif v.nextS(m) and is_true(mdl[vars.config(v.nextS(m), m, i)]):
+			elif v.nextS(m) and is_true(mdl[stng.vars.config(v.nextS(m), m, i)]):
 				curC.append((m, v.nextS(m)))
-				p = getPsiv(prevT, m, v, v.nextS(m), i, M)
+				p = getPsiv(stng, prevT, m, v, v.nextS(m), i, M)
 
 			else:
 				raise Exception('time: %d, msg: %s, v: %s'%(i, m, v))
@@ -356,19 +355,18 @@ def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
 				psi.append(p)
 		if psi:
 			if optimize:
-				stng = Glbl(vars, FCe, FCv, SCv, SCe, UFSv)
 				print 'starting optimization', time.time()
 				previous_solver = sOpt
 				previous_model = b #storing schedule for configuration just before doomed state
-				b, sOpt = ExistsSchedGivenConfig(g, stng, M, t, lval, mdl, i, s=sOpt)
+				b, sOpt = ExistsSchedGivenConfig(stng, g, M, t, lval, mdl, i, s=sOpt)
 				# if previous_model:
-				# 	print GenerateSchedule(previous_model,M,t)
+				# 	print GenerateSchedule(stng, previous_model,M,t)
 				print 'end optimization', time.time()
 				if not b:
 					print 'breaking at', i
 					break
 				else:
-					# printProgress(GenerateSchedule(b, M, t, S), M, t, lval, 1)
+					# printProgress(stng, GenerateSchedule(stng, b, M, t, S), M, t, lval, 1)
 					sOpt.pop() # this will pop the configuration constrains added in lastPart. The other constraints don't change.
 			l.append(And(psi))
 		prevC = curC
@@ -388,22 +386,22 @@ def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
 
 
 
-def printCounterexample(mdl, t, M):
+def printCounterexample(stng, mdl, t, M):
 	for e in g.E:
 		for i in range(t):
-			if is_true(mdl[vars.crash(e,i)]):
+			if is_true(mdl[stng.vars.crash(e,i)]):
 				print 'edge: %s crashed at time %d'%(str(e), i)
 				break
 	return
 	for m in M:
 		print 'message:',str(m)
 		for i in range(t+1):
-			for v in UFSv[m]:
-				if is_true(mdl[vars.config(v,m,i)]):
+			for v in stng.UFSv[m]:
+				if is_true(mdl[stng.vars.config(v,m,i)]):
 					print v,i
 
 
-def CEGAR(M, t, k, l, optimize=False, showProgress=False):
+def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 	'''
 	:param M: The messages to be sent
 	:param t: The timeout.
@@ -415,7 +413,7 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 	counter=1
 	s = Solver()
 	print 'start existsSchedule', time.time()
-	mdl = existsSchedule(M, t, s=s)
+	mdl = existsSchedule(stng, M, t, s=s)
 	print 'end existsSchedule', time.time()
 	if not mdl:
 		print 'NO valid resistant schedule EXISTS'
@@ -429,20 +427,20 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 		j += 1
 		counter += 1
 
-		if counter > 10:
+		if counter > 20:
 			return "Timeout"
 
 		#mdl is has the information about the schedule
-		S = GenerateSchedule(mdl, M, t)
+		S = GenerateSchedule(stng, mdl, M, t)
 
 		#optimization: first try to find a fault seq in which the crashes are at time 0.
 		# print 'start WorstFaultSeq with immediate faults', time.time()
 		print 'start WorstFaultSeq', time.time()
-		crash_mdl = WorstFaultSeq(S, M, t, l, k, immediatefailure=True)
+		crash_mdl = WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=True)
 		# print 'end WorstFaultSeq with immediate faults', time.time()
 		if not crash_mdl:
 			print 'no fault seq with immediate failures!', time.time()
-			crash_mdl = WorstFaultSeq(S, M, t, l, k)
+			crash_mdl = WorstFaultSeq(stng, S, M, t, l, k)
 			print 'end second WorstFaultSeq', time.time()
 
 		if not crash_mdl:
@@ -455,13 +453,13 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 			continue
 
 		if showProgress:
-			printProgress(S, M, t, l, k)
+			printProgress(stng, S, M, t, l, k)
 
 
 		#print '############'
-		#printCounterexample(mdl, t, M)
+		#printCounterexample(stng, mdl, t, M)
 		#print '$$$$$$$$$$$\n\n'
-		new_mdl = addConstraint(s, crash_mdl, M, t, optimize, l, S=S)
+		new_mdl = addConstraint(stng, s, crash_mdl, M, t, optimize, l, S=S)
 		if  new_mdl is False:
 			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
@@ -481,13 +479,13 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 
 
 
-def printProgress(S, M, t, l, k):
+def printProgress(stng, S, M, t, l, k):
 	low = 0
 	high = l
 	rest = 0
 
 	mid = (high + low)/2
-	mdl,s = WorstFaultSeq(S, M, t, mid, k, returnSolver=True)
+	mdl,s = WorstFaultSeq(stng, S, M, t, mid, k, returnSolver=True)
 	while low < high:
 		print 'print progress start iteration', time.time()
 		if mdl is False:
@@ -500,11 +498,11 @@ def printProgress(S, M, t, l, k):
 
 		s.pop()
 		s.push()
-		s.add(Sum([If(vars.config(m.t, m, t), 1, 0) for m in M]) < mid)
+		s.add(Sum([If(stng.vars.config(m.t, m, t), 1, 0) for m in M]) < mid)
 
 		if s.check() == sat:
 			print mid
-			printCounterexample(s.model(), t, M)
+			printCounterexample(stng, s.model(), t, M)
 			mdl = True
 		else:
 			rest = mid
@@ -512,7 +510,7 @@ def printProgress(S, M, t, l, k):
 	print 'The schedule is (%d, %d)-resistant'%(rest, k)
 
 
-def test():
+def test(stng):
 	V = ['s', 'u1', 'u3', 'u4', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h','i']
 	V = dict([(n, Vertex(n)) for n in V])
 	E = [('s', 'a'), ('s', 'u1'), ('s', 'b'), ('s', 'h'), ('s','f'), ('a', 'u1'), ('a', 'u3'), ('a', 'u4'), ('a', 'i'), ('i', 'u1'), ('a', 'b'), ('b', 'c'), ('c','g'), ('g', 'u4'), ('h', 'c'), ('c', 'd'), ('d', 'u3'), ('d', 'u1'), ('f', 'e'), ('e', 'd')]
@@ -533,12 +531,12 @@ def test():
 		V['a'].setNextF(m, V['u%d'%j])
 
 	for m in M:
-		FCv[m] = [m.s]
-		FCe[m] = []
+		stng.FCv[m] = [m.s]
+		stng.FCe[m] = []
 		for v in g.V:
 			if v.nextF(m):
-				FCv[m].append(v.nextF(m))
-				FCe[m].append(g(v, v.nextF(m)))
+				stng.FCv[m].append(v.nextF(m))
+				stng.FCe[m].append(g(v, v.nextF(m)))
 
 	d= {}
 	d[1] = [('s', 'u1'), ('a', 'b'), ('b', 'c'), ('c', 'd'), ('d', 'u1')]
@@ -552,19 +550,19 @@ def test():
 
 
 	for m in M:
-		SCv[m] = [m.s]
-		SCe[m] = []
+		stng.SCv[m] = [m.s]
+		stng.SCe[m] = []
 		for v in g.V:
 			if v.nextS(m):
-				SCv[m].append(v.nextS(m))
-				SCe[m].append(g(v, v.nextS(m)))
+				stng.SCv[m].append(v.nextS(m))
+				stng.SCe[m].append(g(v, v.nextS(m)))
 
 
 
 	for m in M:
-		UFSv[m] = set([v for v in itertools.chain(FCv[m], SCv[m])])
+		stng.UFSv[m] = set([v for v in itertools.chain(stng.FCv[m], stng.SCv[m])])
 
-	#S = CEGAR(M, 5, 2, 3)
+	#S = CEGAR(stng, M, 5, 2, 3)
 	#if S:
 	#    print 'done!'
 	#    print S
@@ -581,11 +579,11 @@ def test():
 	S.add(g(V['a'], V['u3']), 3, m3)
 	S.add(g(V['s'],V['a']), 3, m4)
 	S.add(g(V['a'], V['u4']), 4, m4)
-	mdl = WorstFaultSeq(S, M, 5, 2, 2)
+	mdl = WorstFaultSeq(stng, S, M, 5, 2, 2)
 	if mdl:
-		printCounterexample(mdl, 5, M)
+		printCounterexample(stng, mdl, 5, M)
 		s = Solver()
-		existsSchedule(M, 5, s=s)
+		existsSchedule(stng, M, 5, s=s)
 		s.reset()
 		addCounterexample(s, mdl, M, 5)
 		print s.assertions()
@@ -594,7 +592,7 @@ def test():
 	return
 
 
-def testOpt():
+def testOpt(stng):
 	V = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 	V = dict([(n, Vertex(n)) for n in V])
 	E = [('a', 'b'), ('a', 'g'), ('g', 'c'), ('h', 'c'), ('a', 'h'), ('b', 'c'), ('b', 'e'), ('b', 'd'), ('e', 'f'), ('f', 'c'), ('d', 'c')]
@@ -614,12 +612,12 @@ def testOpt():
 	V['b'].setNextF(m2, V['c'])
 
 	for m in M:
-		FCv[m] = [m.s]
-		FCe[m] = []
+		stng.FCv[m] = [m.s]
+		stng.FCe[m] = []
 		for v in g.V:
 			if v.nextF(m):
-				FCv[m].append(v.nextF(m))
-				FCe[m].append(g(v, v.nextF(m)))
+				stng.FCv[m].append(v.nextF(m))
+				stng.FCe[m].append(g(v, v.nextF(m)))
 
 	d= {}
 	d[1] = [('a', 'g'), ('g', 'c'), ('b', 'd'), ('d', 'c')]
@@ -632,30 +630,29 @@ def testOpt():
 
 
 	for m in M:
-		SCv[m] = [m.s]
-		SCe[m] = []
+		stng.SCv[m] = [m.s]
+		stng.SCe[m] = []
 		for v in g.V:
 			if v.nextS(m):
-				SCv[m].append(v.nextS(m))
-				SCe[m].append(g(v, v.nextS(m)))
+				stng.SCv[m].append(v.nextS(m))
+				stng.SCe[m].append(g(v, v.nextS(m)))
 
 
 
 	for m in M:
-		UFSv[m] = set([v for v in itertools.chain(FCv[m], SCv[m])])
+		stng.UFSv[m] = set([v for v in itertools.chain(stng.FCv[m], stng.SCv[m])])
 
 	S = Schedule()
 	S.add(g(V['a'],V['b']), 0, m1)
 	S.add(g(V['b'], V['c']), 1, m1)
 	S.add(g(V['a'],V['b']), 1, m2)
 	S.add(g(V['b'], V['c']), 2, m2)
-	mdl = WorstFaultSeq(S, M, 4, 2, 1, immediatefailure=True)
-	printCounterexample(mdl, 4, M)
-	st = Glbl(vars, FCe, FCv, SCv, SCe, UFSv)
-	b, sOpt = ExistsSchedGivenConfig(g, st, M, 4, 2, mdl, 0)
+	mdl = WorstFaultSeq(stng, S, M, 4, 2, 1, immediatefailure=True)
+	printCounterexample(stng, mdl, 4, M)
+	b, sOpt = ExistsSchedGivenConfig(g, M, 4, 2, mdl, 0)
 	print 'true' if b else 'false'
 	sOpt.pop()
-	b, sOpt = ExistsSchedGivenConfig(g, st, M, 4, 2, mdl, 1, sOpt)
+	b, sOpt = ExistsSchedGivenConfig(g, M, 4, 2, mdl, 1, sOpt)
 	print b
 	print 'done'
 
@@ -665,24 +662,26 @@ from Graph import GenerateSetting
 import pickle
 def main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
 	print 'start setup', time.time()
-	global g, FCv, FCe, SCv, SCe, UFSv
+	global g #, FCv, FCe, SCv, SCe, UFSv
 	#(g, M, FCv, FCe, SCv, SCe, UFSv) = GenerateSetting(20, 20, 40)
 	(g, M, FCv, FCe, SCv, SCe, UFSv) = GenerateSetting(n, m, e, save=save, load=load, filename=filename, weight=weight)
+	# global stng
+	stng = Glbl(vars, FCe, FCv, SCv, SCe, UFSv)
 
 
 
 	for m in M:
 		print m.id, '%s --> %s'%(m.s, m.t)
-		print ', '.join([str(v) for v in FCv[m]])
-		print ', '.join(['%s --> %s'%(str(v), str(v.nextS(m))) for v in UFSv[m]])
+		print ', '.join([str(v) for v in stng.FCv[m]])
+		print ', '.join(['%s --> %s'%(str(v), str(v.nextS(m))) for v in stng.UFSv[m]])
 		print '################'
 
-	lengths = [len(FCe[m]) for m in M]
+	lengths = [len(stng.FCe[m]) for m in M]
 	print 'max length = ', max(lengths), "min length = ", min(lengths)
 	print 'end setup', time.time()
 
 
-	S = CEGAR(M, t, k, l, optimize=optimize, showProgress=showProgress)
+	S = CEGAR(stng, M, t, k, l, optimize=optimize, showProgress=showProgress)
 	if S == "Timeout":
 		print 'Script Timed out'
 		return 1

@@ -2,11 +2,7 @@
 from z3 import *
 
 
-
-stng = None
-
-
-def AddScheduleConstraints(M, t, s):
+def AddScheduleConstraints(stng, M, t, s):
 	for m in M:
 		for e in stng.FCe[m]:
 			for i in range(t):
@@ -58,14 +54,12 @@ def AddScheduleConstraints(M, t, s):
 
 
 
-def ExistsSchedGivenConfig(g, st, M, t, l, mdl, i, s=None):
-	global stng
-	stng = st
+def ExistsSchedGivenConfig(stng, g, M, t, l, mdl, i, s=None):
 	if s:
-		return lastPart(s, stng, mdl, M, i)
+		return lastPart(stng, s,  mdl, M, i)
 
 	s = Solver()
-	AddScheduleConstraints(M, t, s)
+	AddScheduleConstraints(stng, M, t, s)
 
 	for m in M:
 		for v in stng.UFSv[m]:
@@ -78,7 +72,7 @@ def ExistsSchedGivenConfig(g, st, M, t, l, mdl, i, s=None):
 			for j in range(i,t):
 				#if a message reaches its destination, it stays there.
 				if v == m.t:
-					s.add(Implies(stng.vars.config(m.t, m, j), getUniqueConfigConstr(m.t, m, j+1)))
+					s.add(Implies(stng.vars.config(m.t, m, j), getUniqueConfigConstr(stng, m.t, m, j+1)))
 					continue
 
 				e = g(v, v.nextF(m))
@@ -88,25 +82,25 @@ def ExistsSchedGivenConfig(g, st, M, t, l, mdl, i, s=None):
 
 				#if the first-choice edge does not crash use it according to the schedule
 				if not is_true(mdl[stng.vars.crash(e, j)]):
-					s.add(Implies(And(stng.vars.config(v,m,j), stng.vars.sched(e,m,j)), getUniqueConfigConstr(v.nextF(m), m, j+1)))
-					s.add(Implies(And(stng.vars.config(v,m,j), Not(stng.vars.sched(e,m,j))), getUniqueConfigConstr(v, m, j+1)))
+					s.add(Implies(And(stng.vars.config(v,m,j), stng.vars.sched(e,m,j)), getUniqueConfigConstr(stng, v.nextF(m), m, j+1)))
+					s.add(Implies(And(stng.vars.config(v,m,j), Not(stng.vars.sched(e,m,j))), getUniqueConfigConstr(stng, v, m, j+1)))
 
 				else:
 					e = g(v, v.nextS(m))
 					if not e:
-						s.add(Implies(stng.vars.config(v, m, j), getUniqueConfigConstr(v, m, j+1)))
+						s.add(Implies(stng.vars.config(v, m, j), getUniqueConfigConstr(stng, v, m, j+1)))
 						continue
 
-					fr = free(g, mdl, e, m, M, j)
+					fr = free(stng, g, mdl, e, m, M, j)
 					if fr is True:
-						s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(v.nextS(m), m, j+1)))
+						s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(stng, v.nextS(m), m, j+1)))
 
 					elif fr is False:
-						s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(v, m, j+1)))
+						s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(stng, v, m, j+1)))
 
 					else:
-						s.add(Implies(And(Not(fr), stng.vars.config(v,m,j)), getUniqueConfigConstr(v, m, j+1)))
-						s.add(Implies(And(fr, stng.vars.config(v,m,j)), getUniqueConfigConstr(v.nextS(m), m, j+1)))
+						s.add(Implies(And(Not(fr), stng.vars.config(v,m,j)), getUniqueConfigConstr(stng, v, m, j+1)))
+						s.add(Implies(And(fr, stng.vars.config(v,m,j)), getUniqueConfigConstr(stng, v.nextS(m), m, j+1)))
 
 	for m in M:
 		for v in stng.SCv[m]:
@@ -117,33 +111,33 @@ def ExistsSchedGivenConfig(g, st, M, t, l, mdl, i, s=None):
 			if not e: continue
 
 			for j in range(i,t):
-				fr = free(g, mdl, e, m, M, j)
+				fr = free(stng, g, mdl, e, m, M, j)
 				if fr is True:
-					s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(v.nextS(m), m, j+1)))
+					s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(stng, v.nextS(m), m, j+1)))
 
 				elif fr is False:
-					s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(v, m, j+1)))
+					s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(stng, v, m, j+1)))
 
 				else:
-					s.add(Implies(And(Not(fr), stng.vars.config(v,m,j)), getUniqueConfigConstr(v, m, j+1)))
-					s.add(Implies(And(fr, stng.vars.config(v,m,j)), getUniqueConfigConstr(v.nextS(m), m, j+1)))
+					s.add(Implies(And(Not(fr), stng.vars.config(v,m,j)), getUniqueConfigConstr(stng, v, m, j+1)))
+					s.add(Implies(And(fr, stng.vars.config(v,m,j)), getUniqueConfigConstr(stng, v.nextS(m), m, j+1)))
 
 	#at least l messages arrive
 	s.add(Sum([If(stng.vars.config(m.t, m, t), 1, 0) for m in M]) >= l)
 
-	return lastPart(s, stng, mdl, M, i)
+	return lastPart(stng, s,  mdl, M, i)
 
 
 
 
-def lastPart(s, stng, mdl, M, i):
+def lastPart(stng, s,  mdl, M, i):
 	s.push()
 
 	# messages start at their position in C_i
 	for m in M:
 		for v in stng.UFSv[m]:
 			if is_true(mdl[stng.vars.config(v,m,i)]):
-				s.add(getUniqueConfigConstr(v, m, i))
+				s.add(getUniqueConfigConstr(stng, v, m, i))
 
 
 	if s.check() == sat:
@@ -154,7 +148,7 @@ def lastPart(s, stng, mdl, M, i):
 
 
 
-def getUniqueConfigConstr(v,m,i):
+def getUniqueConfigConstr(stng, v,m,i):
 	'''
 	Returns a constraint that guarantees that m is on v at time i, and not on any other vertex.
 	'''
@@ -168,7 +162,7 @@ def getUniqueConfigConstr(v,m,i):
 
 
 
-def free(g, mdl, e, m, M, i):
+def free(stng, g, mdl, e, m, M, i):
 	#first things first, if e has crashed, it is not free.
 	if is_true(mdl[stng.vars.crash(e,i)]):
 		return False
@@ -208,15 +202,15 @@ def free(g, mdl, e, m, M, i):
 	return And(l)
 
 
-def printModel(g, mdl, M, t, i):
-	S = GenerateSchedule(mdl, M, t)
+def printModel(stng, g, mdl, M, t, i):
+	S = GenerateSchedule(stng, mdl, M, t)
 	print S
-	printCounterexample(g, mdl, t, M, i)
+	printCounterexample(stng, g, mdl, t, M, i)
 
 
 
 
-def GenerateSchedule(mdl, M, t):
+def GenerateSchedule(stng, mdl, M, t):
 	from Objects import  Schedule
 	S = Schedule()
 	for m in M:
@@ -227,7 +221,7 @@ def GenerateSchedule(mdl, M, t):
 
 	return S
 
-def printCounterexample(g, mdl, t, M, j=0):
+def printCounterexample(stng, g, mdl, t, M, j=0):
 	for e in g.E:
 		for i in range(t):
 			if is_true(mdl[stng.vars.crash(e,i)]):
