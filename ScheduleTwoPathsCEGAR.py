@@ -319,6 +319,9 @@ def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
 	prevC = [(m, m.s) for m in M]
 	prevT = []
 	sOpt = None #a solver that is used in optimize
+	previous_solver = None # For returning solver corresponding to model
+	previous_model = None # For returning schedule model obtained from penultimate configuration
+	b = None
 	for i in range(1, t):
 		psi = []
 		curC = []
@@ -355,14 +358,18 @@ def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
 			if optimize:
 				stng = Glbl(vars, FCe, FCv, SCv, SCe, UFSv)
 				print 'starting optimization', time.time()
+				previous_solver = sOpt
+				previous_model = b #storing schedule for configuration just before doomed state
 				b, sOpt = ExistsSchedGivenConfig(g, stng, M, t, lval, mdl, i, s=sOpt)
+				# if previous_model:
+				# 	print GenerateSchedule(previous_model,M,t)
 				print 'end optimization', time.time()
 				if not b:
 					print 'breaking at', i
 					break
 				else:
 					# printProgress(GenerateSchedule(b, M, t, S), M, t, lval, 1)
-					sOpt.pop() # this will pop the sum constraint. The other constraints don't change.
+					sOpt.pop() # this will pop the configuration constrains added in lastPart. The other constraints don't change.
 			l.append(And(psi))
 		prevC = curC
 		prevT = curT
@@ -371,7 +378,12 @@ def addConstraint(s, mdl, M, t, optimize=False, lval=None, S=None):
 	#    print '\n\n'.join([str(x) for x in l])
 		print 'len(l) = ', len(l)
 		s.add(Not(And(l)))
+		if previous_model: # The first state is not the doomed state
+			return previous_model
+		else: # The first state is the doomed state
+			return None
 	else:
+		# No schedule exists
 		return False
 
 
@@ -426,20 +438,20 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 		#optimization: first try to find a fault seq in which the crashes are at time 0.
 		# print 'start WorstFaultSeq with immediate faults', time.time()
 		print 'start WorstFaultSeq', time.time()
-		mdl = WorstFaultSeq(S, M, t, l, k, immediatefailure=True)
+		crash_mdl = WorstFaultSeq(S, M, t, l, k, immediatefailure=True)
 		# print 'end WorstFaultSeq with immediate faults', time.time()
-		if not mdl:
+		if not crash_mdl:
 			print 'no fault seq with immediate failures!', time.time()
-			mdl = WorstFaultSeq(S, M, t, l, k)
+			crash_mdl = WorstFaultSeq(S, M, t, l, k)
 			print 'end second WorstFaultSeq', time.time()
 
-		if not mdl:
+		if not crash_mdl:
 			print 'FOUND (k-l) resistant schedule', "k=",k,"l=",l
 			print S
 			save_to_file(S,'schedules/Schedule_k'+str(k)+'_l'+str(l))
 			l+=1
 			counter=1
-			mdl = s.model()
+			# mdl = s.model()
 			continue
 
 		if showProgress:
@@ -449,20 +461,23 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 		#print '############'
 		#printCounterexample(mdl, t, M)
 		#print '$$$$$$$$$$$\n\n'
-
-		if addConstraint(s, mdl, M, t, optimize, l, S=S) is False:
+		new_mdl = addConstraint(s, crash_mdl, M, t, optimize, l, S=S)
+		if  new_mdl is False:
 			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
-
-		print 'start check()', time.time()
-		b = s.check()
-		print 'end check()', time.time()
-
-		if b == sat:
-			mdl = s.model()
+		elif new_mdl is not None:
+			mdl = new_mdl
+			continue
 		else:
-			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
-			return False
+			print 'start check()', time.time()
+			b = s.check()
+			print 'end check()', time.time()
+
+			if b == sat:
+				mdl = s.model()
+			else:
+				print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
+				return False
 
 
 

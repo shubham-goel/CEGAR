@@ -48,6 +48,14 @@ def AddScheduleConstraints(M, t, s):
 				o = Or([stng.vars.sched(e, m, j) for j in range(i+1, t)])
 				s.add(Implies(stng.vars.sched(e, m, i), Not(o)))
 
+	#all messages arrive
+	for m in M:
+		for e in stng.FCe[m]:
+			if e.t == m.t:
+				break
+
+		s.add(Or([stng.vars.sched(e, m, i) for i in range(t)]))
+
 
 
 def ExistsSchedGivenConfig(g, st, M, t, l, mdl, i, s=None):
