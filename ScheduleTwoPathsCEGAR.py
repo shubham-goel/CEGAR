@@ -463,19 +463,16 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 		if  new_mdl is False:
 			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
-		elif new_mdl is not None:
-			mdl = new_mdl
-			continue
-		else:
-			print 'start check()', time.time()
-			b = s.check()
-			print 'end check()', time.time()
+			
+		print 'start check()', time.time()
+		b = s.check()
+		print 'end check()', time.time()
 
-			if b == sat:
-				mdl = s.model()
-			else:
-				print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
-				return False
+		if b == sat:
+			mdl = s.model()
+		else:
+			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
+			return False
 
 
 
