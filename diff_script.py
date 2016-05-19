@@ -7,6 +7,10 @@ def get_fname(crashes,sent):
 
 def diff_script(k,l):
 	flag = False
+	differed_l = []
+
+	if os.path.isfile(get_fname(k,l)):
+		flag = True
 
 	while True:
 		if os.path.isfile(get_fname(k,l)) and os.path.isfile(get_fname(k,l+1)):
@@ -16,9 +20,12 @@ def diff_script(k,l):
 				print "{},{} and {},{} same".format(str(k),str(l),str(k),str(l+1))
 			else:
 				print "{},{} and {},{} DIFFER!".format(str(k),str(l),str(k),str(l+1))
-				flag = True
+				differed_l.append(l)
 		else:
 			break
 		l += 1
 
-	return flag
+	if not flag:
+		return None
+	else:
+		return differed_l

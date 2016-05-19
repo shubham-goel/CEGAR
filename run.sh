@@ -26,7 +26,7 @@ do
 
 				directory="$nodes-$messages-$edges-$timeout-$k-$l"
 				echo "Progress : $directory::(10-20)-(10-15)-($start_edges-$end_edges)-($end_timeout-$start_timeout)-$k-$l"
-				python ScheduleTwoPathsCEGAR.py $nodes $messages $edges $timeout $k $l --quiet -d > output.curr
+				python ScheduleTwoPathsCEGAR.py $nodes $messages $edges $timeout $k $l --quiet -d > "$directory.curr"
 				if [ $? -ne 0 ]; then
 					prefix="results/not_interesting"
 				else
@@ -34,10 +34,8 @@ do
 				fi
 				mkdir "$prefix/$directory"
 				cp -r schedules "$prefix/$directory/"
-				touch "$prefix/$directory/output"
-				touch "$prefix/$directory/setting"
-				cat output.curr > "$prefix/$directory/output"
-				cat setting.curr > "$prefix/$directory/setting"
+				mv "$directory.output" "$prefix/$directory/"
+				mv "$directory.setting" "$prefix/$directory/"
 
 				target="schedules/"
 				if ! find "$target" -mindepth 1 -print -quit | grep -q .; then

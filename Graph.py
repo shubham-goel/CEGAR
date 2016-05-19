@@ -83,7 +83,11 @@ def GenerateSetting(n, m, e, weight=False, save=False, load=False, filename=None
 			longest_path=[]
 			for start_tmp in range(n):
 				for end_tmp in range(n):
-					p = networkx.shortest_path(G, source=start_tmp, target=end_tmp)
+					try:
+						p = networkx.shortest_path(G, source=start_tmp, target=end_tmp)
+					except NetworkXNoPath:
+						p=[]
+						pass
 					if len(p) > len(longest_path):
 						longest_path = p
 
@@ -97,10 +101,14 @@ def GenerateSetting(n, m, e, weight=False, save=False, load=False, filename=None
 		prev = V[s]
 		FCv[m] = [prev]
 		FCe[m] = []
-		if not weight:
-			p = networkx.shortest_path(G, source=s, target=t)
-		else:
-			p = networkx.shortest_path(G, source=s, target=t, weight='weight')
+		try:
+			if not weight:
+				p = networkx.shortest_path(G, source=s, target=t)
+			else:
+				p = networkx.shortest_path(G, source=s, target=t, weight='weight')
+		except NetworkXNoPath:
+			print "NO PATH"
+			return None
 
 		for v in p[1:]:
 			nextV = V[v]

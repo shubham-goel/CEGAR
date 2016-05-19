@@ -400,20 +400,25 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 	:return: A (k,l)-resistant schedule, if it exists, and otherwise False.
 	'''
 	j = 1
+	counter=1
 	s = Solver()
 	print 'start existsSchedule', time.time()
 	mdl = existsSchedule(M, t, s=s)
 	print 'end existsSchedule', time.time()
 	if not mdl:
+		print 'NO valid resistant schedule EXISTS'
 		return False
 
 	I = tuple([(m, m.s) for m in M])
 	emptyT = tuple([])
 
 	while True:
-		print j
+		print j,counter
 		j += 1
+		counter += 1
 
+		if counter > 10:
+			return "Timeout"
 
 		#mdl is has the information about the schedule
 		S = GenerateSchedule(mdl, M, t)
@@ -433,6 +438,7 @@ def CEGAR(M, t, k, l, optimize=False, showProgress=False):
 			print S
 			save_to_file(S,'schedules/Schedule_k'+str(k)+'_l'+str(l))
 			l+=1
+			counter=1
 			mdl = s.model()
 			continue
 
@@ -662,11 +668,12 @@ def main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False
 
 
 	S = CEGAR(M, t, k, l, optimize=optimize, showProgress=showProgress)
-	if S:
-		print 'done!'
-		print S
+	if S == "Timeout":
+		print 'Script Timed out'
+		return 1
 	else:
-		print 'no schedule!'
+		print 'Finished CEGAR!'
+		return 0
 
 
 from optparse import OptionParser
@@ -678,30 +685,37 @@ def parse_arguments():
 	# parser.add_option("-l", dest="l",
 	# 			  help="The guarantee on the number of messages that should arrive.")
 	parser.add_option("-k", dest="k",
-				  help="The number of edges that are allowed to crash.")
+				  help="#edges that are allowed to crash.")
 	parser.add_option("-n", dest="n",
-				  help="The number of vertices in the network.")
+				  help="#vertices in the network.")
 	parser.add_option("-m", dest="m",
-				  help="The number of messages in the network.")
+				  help="#messages in the network.")
 	parser.add_option("-e", dest="e",
-				  help="The number of edges in the network.")
+				  help="#edges in the network.")
 
 	parser.add_option("-l","--load",
-                  action="store_true", dest="load", default=False,
-                  help="Load setting from file")
+				  action="store_true", dest="load", default=False,
+				  help="Load setting from file")
 	parser.add_option("-b","--brute",
-                  action="store_false", dest="optimize", default=True,
-                  help="Load setting from file")
-	parser.add_option("-q","--quiet",
-                  action="store_false", dest="showProgress", default=False,
-                  help="Dont show progress")
-	parser.add_option("--nw","--no_weight",
-                  action="store_false", dest="weight", default=True,
-                  help="Load setting from file")
-	parser.add_option("-d","--diff",
-                  action="store_true", dest="diff", default=False,
-                  help="Check if schedules generated are different")
+				  action="store_false", dest="optimize", default=True,
+				  help="Dont Optimize")
+	parser.add_option("-v","--verbose",
+				  action="store_true", dest="showProgress", default=False,
+				  help="Dont show progress")
+	parser.add_option("--nw","--no-weight",
+				  action="store_false", dest="weight", default=True,
+				  help="Choose paths without weights")
+	parser.add_option("-d","--no-diff",
+				  action="store_false", dest="diff", default=True,
+				  help="Check if schedules generated are different")
 	return parser.parse_args()
+
+def save_parameters(n,m,e,t,k,l,result):
+	parameter_file = "parameters.output"
+	line = "{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(n,m,e,t,k,l,result)
+	with open(parameter_file, "a") as myfile:
+		myfile.write(line)
+
 
 if __name__ == '__main__':
 	(options, args) = parse_arguments()
@@ -712,8 +726,15 @@ if __name__ == '__main__':
 	showProgress = options.showProgress
 	weight = options.weight
 	diff = options.diff
+	n = int(sys.argv[1])
+	m = int(sys.argv[2])
+	e = int(sys.argv[3])
+	t = int(sys.argv[4])
+	k = int(sys.argv[5])
+	l = int(sys.argv[6])
 
-	filename = 'setting.curr'
+	# filename='{}-{}-{}-{}-{}-{}.setting'.format(n,m,e,t,k,l)
+	filename="settings.curr"
 
 	# Remove old Schedules
 	cmd = "rm -r schedules/"
@@ -721,11 +742,10 @@ if __name__ == '__main__':
 	cmd = "mkdir schedules/"
 	subprocess.call([cmd],shell=True)
 
-# def main(n, m, e, t, l, k, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
+	# main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
 	# main(int(options.n), int(options.m), int(options.e), int(options.t), int(options.l), int(options.k))
 	# main(10, 30, 15, 7, 26, 1, filename, save=True, load=False, optimize=True, showProgress=True, weight=True)
-	main(int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]), 
-		filename, save=save, load=load, optimize=optimize, showProgress=showProgress, weight=weight)
+	exit_status = main(n,m,e,t,k,l,filename, save=save, load=load, optimize=optimize, showProgress=showProgress, weight=weight)
 
 	if diff:
 		from diff_script import *
@@ -735,10 +755,21 @@ if __name__ == '__main__':
 		print "##################################"
 		k = int(sys.argv[5])
 		l = int(sys.argv[6])
-		differed = diff_script(k,l)
+		differed_l = diff_script(k,l)
 		print "\n\nEnded script!"
 
-		if differed:
+		if exit_status>0:
+			msg = "Timeout; "
+		else:
+			msg = ""
+
+		if differed_l == None:
+			save_parameters(n,m,e,t,k,l,msg + "No Schedule")
+			sys.exit(0)
+		elif differed_l == []:
+			save_parameters(n,m,e,t,k,l,msg + "Same Schedule")
 			sys.exit(0)
 		else:
+			for i in differed_l:
+				save_parameters(n,m,e,t,k,i,msg + "l and (l+1) DIFFER")
 			sys.exit(1)
