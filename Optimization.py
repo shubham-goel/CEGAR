@@ -1,8 +1,9 @@
 
 from z3 import *
+import time
 
 
-def AddScheduleConstraints(stng, M, t, s):
+def addScheduleConstraints(stng, M, t, s):
 	for m in M:
 		for e in stng.FCe[m]:
 			for i in range(t):
@@ -53,23 +54,16 @@ def AddScheduleConstraints(stng, M, t, s):
 		s.add(Or([stng.vars.sched(e, m, i) for i in range(t)]))
 
 
-
-def ExistsSchedGivenConfig(stng, g, M, t, l, mdl, i, s=None):
-	if s:
-		return lastPart(stng, s,  mdl, M, i)
-
-	s = Solver()
-	AddScheduleConstraints(stng, M, t, s)
-
+def addScheduleSimulationConstraints(stng, s, g, M, t, l, crash_mdl):
 	for m in M:
 		for v in stng.UFSv[m]:
-			for j in range(i, t+1):
+			for j in range(1, t+1):
 				stng.vars.setConfig(v,m,j)
 
 
 	for m in M:
 		for v in stng.FCv[m]:
-			for j in range(i,t):
+			for j in range(1,t):
 				#if a message reaches its destination, it stays there.
 				if v == m.t:
 					s.add(Implies(stng.vars.config(m.t, m, j), getUniqueConfigConstr(stng, m.t, m, j+1)))
@@ -81,7 +75,7 @@ def ExistsSchedGivenConfig(stng, g, M, t, l, mdl, i, s=None):
 					continue
 
 				#if the first-choice edge does not crash use it according to the schedule
-				if not is_true(mdl[stng.vars.crash(e, j)]):
+				if not is_true(crash_mdl[stng.vars.crash(e, j)]):
 					s.add(Implies(And(stng.vars.config(v,m,j), stng.vars.sched(e,m,j)), getUniqueConfigConstr(stng, v.nextF(m), m, j+1)))
 					s.add(Implies(And(stng.vars.config(v,m,j), Not(stng.vars.sched(e,m,j))), getUniqueConfigConstr(stng, v, m, j+1)))
 
@@ -91,7 +85,7 @@ def ExistsSchedGivenConfig(stng, g, M, t, l, mdl, i, s=None):
 						s.add(Implies(stng.vars.config(v, m, j), getUniqueConfigConstr(stng, v, m, j+1)))
 						continue
 
-					fr = free(stng, g, mdl, e, m, M, j)
+					fr = free(stng, g, crash_mdl, e, m, M, j)
 					if fr is True:
 						s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(stng, v.nextS(m), m, j+1)))
 
@@ -110,8 +104,8 @@ def ExistsSchedGivenConfig(stng, g, M, t, l, mdl, i, s=None):
 			e = g(v, v.nextS(m))
 			if not e: continue
 
-			for j in range(i,t):
-				fr = free(stng, g, mdl, e, m, M, j)
+			for j in range(1,t):
+				fr = free(stng, g, crash_mdl, e, m, M, j)
 				if fr is True:
 					s.add(Implies(stng.vars.config(v,m,j), getUniqueConfigConstr(stng, v.nextS(m), m, j+1)))
 
@@ -125,26 +119,22 @@ def ExistsSchedGivenConfig(stng, g, M, t, l, mdl, i, s=None):
 	#at least l messages arrive
 	s.add(Sum([If(stng.vars.config(m.t, m, t), 1, 0) for m in M]) >= l)
 
-	return lastPart(stng, s,  mdl, M, i)
-
-
-
-
-def lastPart(stng, s,  mdl, M, i):
-	s.push()
-
+def setLastConfig(stng, s,  crash_mdl, M, i):
 	# messages start at their position in C_i
 	for m in M:
 		for v in stng.UFSv[m]:
-			if is_true(mdl[stng.vars.config(v,m,i)]):
+			if is_true(crash_mdl[stng.vars.config(v,m,i)]):
 				s.add(getUniqueConfigConstr(stng, v, m, i))
 
 
-	if s.check() == sat:
+	print 'start check()', time.time()
+	b = s.check()
+	print 'end check()', time.time()
+	if b == sat:
 		mdl = s.model()
-		return mdl,s
+		return mdl
 	else:
-		return False,s
+		return False
 
 
 
@@ -210,14 +200,23 @@ def printModel(stng, g, mdl, M, t, i):
 
 
 
-def GenerateSchedule(stng, mdl, M, t):
+def GenerateSchedule(stng, mdl, M, t, Sold=None):
 	from Objects import  Schedule
 	S = Schedule()
 	for m in M:
+		b=False
 		for e in stng.FCe[m]:
 			for i in range(t):
 				if is_true(mdl[stng.vars.sched(e,m,i)]):
 					S.add(e, i, m)
+					b=True
+
+		if not b and Sold:
+			for e in stng.FCe[m]:
+				for i in range(t):
+					if Sold(e,i) == m:
+						S.add(e, i, m)
+
 
 	return S
 

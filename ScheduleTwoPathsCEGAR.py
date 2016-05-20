@@ -18,7 +18,11 @@ UFSv = {} # the union of vertices in FCv and SCv
 vars = Vars()
 g = None
 
-from Optimization import ExistsSchedGivenConfig
+from Optimization import setLastConfig
+from Optimization import addScheduleConstraints
+from Optimization import GenerateSchedule
+from Optimization import getUniqueConfigConstr
+from Optimization import addScheduleSimulationConstraints
 
 def save_to_file(S,filename):
 	file = open(filename, 'w')
@@ -29,77 +33,10 @@ def existsSchedule(stng, M, t, s=None):
 	if not s:
 		s = Solver()
 
-	for m in M:
-		for e in stng.FCe[m]:
-			for i in range(t):
-				stng.vars.setSched(e, m, i)
-
-	# a message is sent on e only if it arrived at e.s at a previous time
-	for m in M:
-		for e in stng.FCe[m]:
-			#find the previous edge on the first path
-			for p in stng.FCe[m]:
-				if p.t == e.s:
-					break
-			else:
-				#if no such edge exists, this is the first edge in the path, and it should not have this contraint.
-				continue
-
-			for i in range(1,t):
-				o = Or([stng.vars.sched(p, m, j) for j in range(i)])
-				s.add(Implies(stng.vars.sched(e,m,i), o))
-
-	# a message only exits through its origin
-	for m in M:
-		s.add(And([Not(stng.vars.sched(e, m, 0)) for e in stng.FCe[m] if e.s != m.s]))
-
-
-
-	#all messages arrive
-	for m in M:
-		for e in stng.FCe[m]:
-			if e.t == m.t:
-				break
-
-		s.add(Or([stng.vars.sched(e, m, i) for i in range(t)]))
-
-	# two messages can't be sent on the same link at the same time
-	for m in M:
-		for e in stng.FCe[m]:
-			for i in range(t):
-				s.add(Implies(stng.vars.sched(e, m, i), Not(Or([stng.vars.sched(e, m2,i) for m2 in M if m2 != m and e in stng.FCe[m2]]))))
-
-	# A message can only exit a vertex once
-	for m in M:
-		for e in stng.FCe[m]:
-			for i in range(t-1):
-				o = Or([stng.vars.sched(e, m, j) for j in range(i+1, t)])
-				s.add(Implies(stng.vars.sched(e, m, i), Not(o)))
-
+	addScheduleConstraints(stng, M, t, s)
 
 	if s.check() == sat:
 		return s.model()
-
-
-def GenerateSchedule(stng, mdl, M, t, Sold=None):
-	S = Schedule()
-	for m in M:
-		b=False
-		for e in stng.FCe[m]:
-			for i in range(t):
-				if is_true(mdl[stng.vars.sched(e,m,i)]):
-					S.add(e, i, m)
-					b=True
-
-		if not b and Sold:
-			for e in stng.FCe[m]:
-				for i in range(t):
-					if Sold(e,i) == m:
-						S.add(e, i, m)
-
-
-	return S
-
 
 
 # is there a fault sequence that performs at most k faults and in which less than l messages arrive
@@ -219,20 +156,6 @@ def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=Fals
 
 
 
-def getUniqueConfigConstr(stng, v,m,i):
-	'''
-	Returns a constraint that guarantees that m is on v at time i, and not on any other vertex.
-	'''
-	notThere = And([Not(stng.vars.config(u, m, i)) for u in stng.UFSv[m] if u != v])
-	here = stng.vars.config(v, m, i)
-	return And(here, notThere)
-
-
-
-
-
-
-
 def free(stng, e, m, M, S, i):
 	'''
 	returns False if the edge is not free according to the schedule
@@ -313,37 +236,40 @@ def getPsiv(stng, T, m, v, u, i, M):
 
 
 
-def addConstraint(stng, s, mdl, M, t, optimize=False, lval=None, S=None):
-	l = []
+def optimizeSched(stng, s, crash_mdl, M, t, optimize=False, lval=None, S=None):
+	Psis = []
 	prevC = [(m, m.s) for m in M]
 	prevT = []
-	sOpt = None #a solver that is used in optimize
-	previous_solver = None # For returning solver corresponding to model
-	previous_model = None # For returning schedule model obtained from penultimate configuration
-	b = None
+	sOpt = s #a solver that is used in optimize
+	mdl = None
+	previous_model = mdl # For returning schedule model obtained from penultimate configuration
+
+	if optimize:
+		addScheduleSimulationConstraints(stng, sOpt, g, M, t, lval, crash_mdl)
+
 	for i in range(1, t):
 		psi = []
 		curC = []
 		curT = []
 
 		for e in g.E:
-			if is_true(mdl[stng.vars.crash(e, i)]):
+			if is_true(crash_mdl[stng.vars.crash(e, i)]):
 				curT.append(e)
 
 		for (m,v) in prevC:
 			# the message either doesn't move
-			if is_true(mdl[stng.vars.config(v, m, i)]):
+			if is_true(crash_mdl[stng.vars.config(v, m, i)]):
 				curC.append((m, v))
 				p = getPsiv(stng, prevT, m, v, v, i, M)
 
 			#or moves to the first choice
-			elif v.nextF(m) and is_true(mdl[stng.vars.config(v.nextF(m), m, i)]):
+			elif v.nextF(m) and is_true(crash_mdl[stng.vars.config(v.nextF(m), m, i)]):
 				curC.append((m, v.nextF(m)))
 				p = getPsiv(stng, prevT, m, v, v.nextF(m), i, M)
 
 
 			#or moves to the second choice
-			elif v.nextS(m) and is_true(mdl[stng.vars.config(v.nextS(m), m, i)]):
+			elif v.nextS(m) and is_true(crash_mdl[stng.vars.config(v.nextS(m), m, i)]):
 				curC.append((m, v.nextS(m)))
 				p = getPsiv(stng, prevT, m, v, v.nextS(m), i, M)
 
@@ -356,35 +282,43 @@ def addConstraint(stng, s, mdl, M, t, optimize=False, lval=None, S=None):
 		if psi:
 			if optimize:
 				print 'starting optimization', time.time()
-				previous_solver = sOpt
-				previous_model = b #storing schedule for configuration just before doomed state
-				b, sOpt = ExistsSchedGivenConfig(stng, g, M, t, lval, mdl, i, s=sOpt)
-				# if previous_model:
-				# 	print GenerateSchedule(stng, previous_model,M,t)
+				previous_model = mdl #storing schedule for configuration just before doomed state	
+				sOpt.push()
+				mdl = setLastConfig(stng, sOpt, crash_mdl, M, i)
 				print 'end optimization', time.time()
-				if not b:
+				if not mdl:
 					print 'breaking at', i
 					break
 				else:
-					# printProgress(stng, GenerateSchedule(stng, b, M, t, S), M, t, lval, 1)
-					sOpt.pop() # this will pop the configuration constrains added in lastPart. The other constraints don't change.
-			l.append(And(psi))
+					sOpt.pop() # this will pop the configuration constrains added in setLastConfig. The other constraints don't change.
+			Psis.append(And(psi))
 		prevC = curC
 		prevT = curT
 
-	if l:
-	#    print '\n\n'.join([str(x) for x in l])
-		print 'len(l) = ', len(l)
-		s.add(Not(And(l)))
-		if previous_model: # The first state is not the doomed state
+	if Psis:
+	#    print '\n\n'.join([str(x) for x in Psis])
+		print 'len(Psis) = ', len(Psis)
+		s.add(Not(And(Psis)))
+		if optimize and (previous_model is not None):
 			return previous_model
-		else: # The first state is the doomed state
-			return None
+		else:
+			return checkReturnModel(s)
+
 	else:
 		# No schedule exists
 		return False
 
 
+def checkReturnModel(s):
+	print 'start check()', time.time()
+	b = s.check()
+	print 'end check()', time.time()
+
+	if b == sat:
+		mdl = s.model()
+		return mdl
+	else:
+		return False
 
 def printCounterexample(stng, mdl, t, M):
 	for e in g.E:
@@ -459,23 +393,22 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 		#print '############'
 		#printCounterexample(stng, mdl, t, M)
 		#print '$$$$$$$$$$$\n\n'
-		new_mdl = addConstraint(stng, s, crash_mdl, M, t, optimize, l, S=S)
+		new_mdl = optimizeSched(stng, s, crash_mdl, M, t, optimize, l, S=S)
 		if  new_mdl is False:
 			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
-		elif new_mdl is not None:
-			mdl = new_mdl
-			continue
 		else:
-			print 'start check()', time.time()
-			b = s.check()
-			print 'end check()', time.time()
+			mdl = new_mdl
+		# else:
+		# 	print 'start check()', time.time()
+		# 	b = s.check()
+		# 	print 'end check()', time.time()
 
-			if b == sat:
-				mdl = s.model()
-			else:
-				print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
-				return False
+		# 	if b == sat:
+		# 		mdl = s.model()
+		# 	else:
+		# 		print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
+		# 		return False
 
 
 
