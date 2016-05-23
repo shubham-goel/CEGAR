@@ -58,6 +58,9 @@ def diff_script2(k,l):
 			part_elem = [l+1]
 		l += 1
 
+	if part_elem != []:
+		partition.append(part_elem)
+		
 	if partition == []:
 		return None
 	else:
