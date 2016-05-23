@@ -31,6 +31,7 @@ def existsSchedule(stng, M, t, s=None):
 	if not s:
 		s = Solver()
 
+	# Add the path-constraints that must be followed by every schedule
 	addScheduleConstraints(stng, M, t, s)
 
 	if s.check() == sat:
@@ -39,6 +40,13 @@ def existsSchedule(stng, M, t, s=None):
 
 # is there a fault sequence that performs at most k faults and in which less than l messages arrive
 def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=False):
+	'''
+	Returns a Z3 model of a saboteur stratergy that wins against schedule S
+	Returns False if no such stratergy exists. In this case, S is k-l resistant
+
+	immediatefailure=True: Crashes occur only at time=0
+	returnSolver=True: Solver is also returned. To be USED ONLY WITH printProgress()
+	'''
 	s = Solver()
 
 	# edge e fails at time i
@@ -116,6 +124,7 @@ def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=Fals
 			#handled in the above
 			if v in stng.FCv[m]: continue
 
+			# doesn't form an edge (Sanity Check)
 			if not g(v, v.nextS(m)): continue
 
 			for i in range(t):
@@ -134,6 +143,7 @@ def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=Fals
 
 
 	if returnSolver:
+		# Create backtracking point for printProgress()
 		s.push()
 
 	#less than l messages arrive
@@ -141,9 +151,11 @@ def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=Fals
 
 	print 'worst faults start check', time.time()
 	if s.check() == sat:
+		# Found saboteur stratergy
 		print 'end', time.time()
 		mdl = s.model()
 	else:
+		# No saboteur stratergy exists
 		print 'end', time.time()
 		mdl =  False
 
@@ -199,7 +211,8 @@ def free(stng, e, m, M, S, i):
 
 def getPsiv(stng, T, m, v, u, i, M):
 	'''
-	Assuming m is on v at time i, and the set of edges that fail are T, returns a predicate that ensures that m moves to u.
+	Assuming m is on v at time i, and the set of edges that fail are T, 
+	Returns a predicate that ensures that m moves to u.
 	'''
 	if v == m.t:
 		return None
@@ -238,7 +251,7 @@ def optimizeSched(stng, s, crash_mdl, M, t, optimize=False, lval=None, S=None):
 	Returns
 		False : 0th State is doomed
 		None : 1st State is Domed
-		Schedule : A valid schedule equal to the last undoomed state
+		Schedule : A valid schedule arising from the satisfiability of the last undoomed state
 	'''
 
 	Psis = []
@@ -339,6 +352,10 @@ def optimizeSched(stng, s, crash_mdl, M, t, optimize=False, lval=None, S=None):
 
 
 def checkReturnModel(s):
+	'''
+	Returns model staisfying solver s,
+	Returns False if s is unsat
+	'''
 	print 'start check()', time.time()
 	b = s.check()
 	print 'end check()', time.time()
@@ -350,10 +367,14 @@ def checkReturnModel(s):
 		return False
 
 def printCounterexample(stng, mdl, t, M):
+	'''
+	Selectively prints the crashed edges in mdl
+	'''
 	for e in g.E:
 		for i in range(t):
 			if is_true(mdl[stng.vars.crash(e,i)]):
 				print 'edge: %s crashed at time %d'%(str(e), i)
+				# Safe to break as an Edge can crash only once
 				break
 	return
 	for m in M:
@@ -374,8 +395,10 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 	'''
 	j = 1
 	counter=1
+	#initiate new solver
 	s = Solver()
 	print 'start existsSchedule', time.time()
+	# Check existence of valid schedule
 	mdl = existsSchedule(stng, M, t, s=s)
 	print 'end existsSchedule', time.time()
 	if not mdl:
