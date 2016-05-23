@@ -3,6 +3,11 @@ from z3 import *
 import time
 
 
+def save_to_file(S,filename):
+	file = open(filename, 'w')
+	pickle.dump(S, file)
+	file.close()
+
 def addScheduleConstraints(stng, M, t, s):
 	for m in M:
 		for e in stng.FCe[m]:
@@ -125,7 +130,6 @@ def setLastConfig(stng, s,  crash_mdl, M, i):
 		for v in stng.UFSv[m]:
 			if is_true(crash_mdl[stng.vars.config(v,m,i)]):
 				s.add(getUniqueConfigConstr(stng, v, m, i))
-
 
 	print 'start check()', time.time()
 	b = s.check()

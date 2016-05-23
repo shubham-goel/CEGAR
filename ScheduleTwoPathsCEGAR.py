@@ -6,6 +6,7 @@ sys.path.append("bin")
 from z3 import *
 
 from Objects import *
+from copy import deepcopy
 
 
 FC = {} #(m,v) --> v
@@ -23,11 +24,8 @@ from Optimization import addScheduleConstraints
 from Optimization import GenerateSchedule
 from Optimization import getUniqueConfigConstr
 from Optimization import addScheduleSimulationConstraints
+from Optimization import save_to_file
 
-def save_to_file(S,filename):
-	file = open(filename, 'w')
-	pickle.dump(S, file)
-	file.close()
 
 def existsSchedule(stng, M, t, s=None):
 	if not s:
@@ -235,14 +233,26 @@ def getPsiv(stng, T, m, v, u, i, M):
 
 
 
-
 def optimizeSched(stng, s, crash_mdl, M, t, optimize=False, lval=None, S=None):
+	'''
+	Returns
+		False : 0th State is doomed
+		None : 1st State is Domed
+		Schedule : A valid schedule equal to the last undoomed state
+	'''
+
 	Psis = []
 	prevC = [(m, m.s) for m in M]
 	prevT = []
+
+	##########
+	print "Create a new scope..."
+	s.push() #Backtracking point for end of optimization
+	##########
+
 	sOpt = s #a solver that is used in optimize
-	mdl = None
-	previous_model = mdl # For returning schedule model obtained from penultimate configuration
+	sched = None
+	previous_sched = sched # For returning schedule model obtained from penultimate configuration
 
 	if optimize:
 		addScheduleSimulationConstraints(stng, sOpt, g, M, t, lval, crash_mdl)
@@ -282,28 +292,47 @@ def optimizeSched(stng, s, crash_mdl, M, t, optimize=False, lval=None, S=None):
 		if psi:
 			if optimize:
 				print 'starting optimization', time.time()
-				previous_model = mdl #storing schedule for configuration just before doomed state	
+
+				#storing schedule for configuration just before doomed state
+				previous_sched = sched
+
 				sOpt.push()
 				mdl = setLastConfig(stng, sOpt, crash_mdl, M, i)
+				sOpt.pop() 
+				# this will pop the configuration constrains added in setLastConfig. The other constraints don't change.
+
 				print 'end optimization', time.time()
+
 				if not mdl:
 					print 'breaking at', i
 					break
-				else:
-					sOpt.pop() # this will pop the configuration constrains added in setLastConfig. The other constraints don't change.
+				# else:
+					# sOpt.pop() # this will pop the configuration constrains added in setLastConfig. The other constraints don't change.
+
+				sched = GenerateSchedule(stng, mdl, M, t)
+
 			Psis.append(And(psi))
 		prevC = curC
 		prevT = curT
+
+	##########
+	print "Restoring State"
+	s.pop() #Returning Solver to original state
+	##########
 
 	if Psis:
 	#    print '\n\n'.join([str(x) for x in Psis])
 		print 'len(Psis) = ', len(Psis)
 		s.add(Not(And(Psis)))
-		if optimize and (previous_model is not None):
-			return previous_model
+		if optimize and (previous_sched is not None):
+			# Returns None/ Schedule
+			return previous_sched
 		else:
-			return checkReturnModel(s)
-
+			mdl = checkReturnModel(s)
+			if not mdl:
+				return False
+			else:
+				return GenerateSchedule(stng, mdl, M, t)
 	else:
 		# No schedule exists
 		return False
@@ -356,6 +385,9 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 	I = tuple([(m, m.s) for m in M])
 	emptyT = tuple([])
 
+	#mdl is has the information about the schedule
+	S = GenerateSchedule(stng, mdl, M, t)
+
 	while True:
 		print j,counter
 		j += 1
@@ -364,8 +396,6 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 		if counter > 20:
 			return "Timeout"
 
-		#mdl is has the information about the schedule
-		S = GenerateSchedule(stng, mdl, M, t)
 
 		#optimization: first try to find a fault seq in which the crashes are at time 0.
 		# print 'start WorstFaultSeq with immediate faults', time.time()
@@ -393,12 +423,13 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 		#print '############'
 		#printCounterexample(stng, mdl, t, M)
 		#print '$$$$$$$$$$$\n\n'
-		new_mdl = optimizeSched(stng, s, crash_mdl, M, t, optimize, l, S=S)
-		if  new_mdl is False:
+		new_S = optimizeSched(stng, s, crash_mdl, M, t, optimize, l, S=S)
+		if  new_S is False:
 			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
 		else:
-			mdl = new_mdl
+			S = new_S
+
 		# else:
 		# 	print 'start check()', time.time()
 		# 	b = s.check()
@@ -704,6 +735,9 @@ if __name__ == '__main__':
 		l = int(sys.argv[6])
 		differed_l = diff_script(k,l)
 		print "\n\nEnded script!"
+		partitions = diff_script2(k,l)
+		print "Partitions:"
+		print partitions
 
 		if exit_status>0:
 			msg = "Timeout; "
