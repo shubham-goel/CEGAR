@@ -103,7 +103,7 @@ def GenerateSchedule(stng, mdl, M, t, Sold=None):
 
 
 # is there a fault sequence that performs at most k faults and in which less than l messages arrive
-def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=False):
+def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=False, permanentCrash=True):
 	s = Solver()
 
 	# edge e fails at time i
@@ -111,12 +111,13 @@ def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=Fals
 		for i in range(t):
 			stng.vars.setCrash(e, i)
 
-			# once an edge crashes, it stays down
-			if i > 0:
-				s.add(Implies(stng.vars.crash(e, i-1), stng.vars.crash(e, i)))
+			if permanentCrash:
+				# once an edge crashes, it stays down
+				if i > 0:
+					s.add(Implies(stng.vars.crash(e, i-1), stng.vars.crash(e, i)))
 
 		#require that if an edge fails, it fails at time 0
-		if immediatefailure:
+		if immediatefailure and permanentCrash:
 			s.add(Implies(stng.vars.crash(e, t-1), stng.vars.crash(e, 0)))
 
 
