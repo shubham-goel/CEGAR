@@ -393,7 +393,7 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 		j += 1
 		counter += 1
 
-		if counter > 20:
+		if counter > 10:
 			return "Timeout"
 
 

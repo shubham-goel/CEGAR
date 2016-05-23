@@ -1,7 +1,7 @@
 
 from z3 import *
 import time
-
+import pickle
 
 def save_to_file(S,filename):
 	file = open(filename, 'w')
