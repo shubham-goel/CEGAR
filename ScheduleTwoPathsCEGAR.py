@@ -106,103 +106,7 @@ def GenerateSchedule(stng, mdl, M, t, Sold=None):
 def WorstFaultSeq(stng, S, M, t, l, k, immediatefailure=False, returnSolver=False):
 	s = Solver()
 
-	# edge e fails at time i
-	for e in g.E:
-		for i in range(t):
-			stng.vars.setCrash(e, i)
-
-			# once an edge crashes, it stays down
-			if i > 0:
-				s.add(Implies(stng.vars.crash(e, i-1), stng.vars.crash(e, i)))
-
-		#require that if an edge fails, it fails at time 0
-		if immediatefailure:
-			s.add(Implies(stng.vars.crash(e, t-1), stng.vars.crash(e, 0)))
-
-
-
-	# the total number of crashes is at most k
-	s.add(Sum([If(stng.vars.crash(e,t-1), 1, 0) for e in g.E]) <= k)
-
-
-
-	# configuration variables -- m is on v at time i.
-	for m in M:
-		for v in stng.UFSv[m]:
-			for i in range(t+1):
-				stng.vars.setConfig(v,m,i)
-
-
-
-	# messages start at their origin
-	for m in M:
-		s.add(getUniqueConfigConstr(stng, m.s, m, 0))
-
-
-	for m in M:
-		for v in stng.FCv[m]:
-			for i in range(t):
-				#if a message reaches its destination, it stays there.
-				s.add(Implies(stng.vars.config(m.t, m, i), getUniqueConfigConstr(stng, m.t, m, i+1)))
-
-				e = g(v, v.nextF(m))
-				if not e:
-					assert(v == m.t)
-					continue
-
-				if S(e, i) == m:
-					# m is on v and edge e has not crashed. Move according to the schedule
-					a = And(stng.vars.config(v, m, i), Not(stng.vars.crash(e,i)))
-					s.add(Implies(a, getUniqueConfigConstr(stng, e.t, m, i+1)))
-				else:
-					# m is on v and edge e has not crashed but it is not time to move. Wait.
-					a = And(stng.vars.config(v, m, i), Not(stng.vars.crash(e,i)))
-					s.add(Implies(a, getUniqueConfigConstr(stng, v, m, i+1)))
-
-				if not v.nextS(m):
-					#no fall back edge, do nothing.
-					s.add(Implies(And(stng.vars.config(v, m, i), stng.vars.crash(e,i)), getUniqueConfigConstr(stng, v, m, i+1)))
-					continue
-
-				#m is on v and e has crashed.
-				x = And(stng.vars.config(v,m,i), stng.vars.crash(e, i))
-
-				# the fallback edge is free
-				fr = free(stng, g(v, v.nextS(m)), m, M, S, i)
-				# if it is not free, stay
-				stay = Implies(Not(fr), getUniqueConfigConstr(stng, v, m, i+1))
-				#if it is free, use it
-				move = Implies(fr, getUniqueConfigConstr(stng, v.nextS(m), m, i+1))
-				s.add(Implies(x, stay))
-				s.add(Implies(x, move))
-
-	for m in M:
-		for v in stng.SCv[m]:
-			#handled in the above
-			if v in stng.FCv[m]: continue
-
-			if not g(v, v.nextS(m)): continue
-
-			for i in range(t):
-				#m is on v
-				x = stng.vars.config(v,m,i)
-
-				# the fallback edge is free
-				fr = free(stng, g(v, v.nextS(m)), m, M, S, i)
-
-				# if it is not free, stay
-				stay = Implies(Not(fr), getUniqueConfigConstr(stng, v, m, i+1))
-				#if it is free, use it
-				move = Implies(fr, getUniqueConfigConstr(stng, v.nextS(m), m, i+1))
-				s.add(Implies(x, stay))
-				s.add(Implies(x, move))
-
-
-	if returnSolver:
-		s.push()
-
-	#less than l messages arrive
-	s.add(Sum([If(stng.vars.config(m.t, m, t), 1, 0) for m in M]) < l)
+	WFS_Constraints(stng,s, S, M, t, l, k, immediatefailure=immediatefailure, returnSolver=returnSolver)
 
 	print 'worst faults start check', time.time()
 	if s.check() == sat:
@@ -226,10 +130,6 @@ def getUniqueConfigConstr(stng, v,m,i):
 	notThere = And([Not(stng.vars.config(u, m, i)) for u in stng.UFSv[m] if u != v])
 	here = stng.vars.config(v, m, i)
 	return And(here, notThere)
-
-
-
-
 
 
 
@@ -401,7 +301,7 @@ def printCounterexample(stng, mdl, t, M):
 					print v,i
 
 
-def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
+def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False, countFaults=False):
 	'''
 	:param M: The messages to be sent
 	:param t: The timeout.
@@ -421,6 +321,13 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 
 	I = tuple([(m, m.s) for m in M])
 	emptyT = tuple([])
+
+	if countFaults:
+		S = GenerateSchedule(stng, mdl, M, t)
+		print "\n\nCounting Sabeteur Strategies for Schedule now..."
+		num_faults = count_WFS(stng, S, M, t, l, k, immediatefailure=False)
+		print "Number of distinct stratergies = {}\n\n".format(str(num_faults))
+		return num_faults
 
 	while True:
 		print j,counter
@@ -473,7 +380,6 @@ def CEGAR(stng, M, t, k, l, optimize=False, showProgress=False):
 		else:
 			print 'NO (k-l) resistant schedule EXISTS', "k=",k,"l=",l
 			return False
-
 
 
 def printProgress(stng, S, M, t, l, k):
@@ -657,7 +563,7 @@ def testOpt(stng):
 import time
 from Graph import GenerateSetting
 import pickle
-def main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
+def main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False, countFaults=False):
 	print 'start setup', time.time()
 	global g #, FCv, FCe, SCv, SCe, UFSv
 	#(g, M, FCv, FCe, SCv, SCe, UFSv) = GenerateSetting(20, 20, 40)
@@ -678,7 +584,11 @@ def main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False
 	print 'end setup', time.time()
 
 
-	S = CEGAR(stng, M, t, k, l, optimize=optimize, showProgress=showProgress)
+	S = CEGAR(stng, M, t, k, l, optimize=optimize, showProgress=showProgress, countFaults=countFaults)
+
+	if countFaults:
+		save_counting_parameters(n,m,e,t,k,l,str(S))
+
 	if S == "Timeout":
 		print 'Script Timed out'
 		return 1
@@ -717,8 +627,11 @@ def parse_arguments():
 				  action="store_false", dest="weight", default=True,
 				  help="Choose paths without weights")
 	parser.add_option("-d","--no-diff",
-				  action="store_false", dest="diff", default=True,
+				  action="store_true", dest="diff", default=False,
 				  help="Check if schedules generated are different")
+	parser.add_option("-c","--count",
+				  action="store_true", dest="countFaults", default=False,
+				  help="Counts number of Sabeteur winning stratergies given Schedule")
 	return parser.parse_args()
 
 def save_parameters(n,m,e,t,k,l,result):
@@ -726,6 +639,142 @@ def save_parameters(n,m,e,t,k,l,result):
 	line = "{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(n,m,e,t,k,l,result)
 	with open(parameter_file, "a") as myfile:
 		myfile.write(line)
+
+
+def save_counting_parameters(n,m,e,t,k,l,result):
+	parameter_file = "counting_parameters.output"
+	line = "{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(n,m,e,t,k,l,result)
+	with open(parameter_file, "a") as myfile:
+		myfile.write(line)
+
+def WFS_Constraints(stng,s, S, M, t, l, k, immediatefailure=False, returnSolver=False):
+	# edge e fails at time i
+	for e in g.E:
+		for i in range(t):
+			stng.vars.setCrash(e, i)
+
+			# once an edge crashes, it stays down
+			if i > 0:
+				s.add(Implies(stng.vars.crash(e, i-1), stng.vars.crash(e, i)))
+
+		#require that if an edge fails, it fails at time 0
+		if immediatefailure:
+			s.add(Implies(stng.vars.crash(e, t-1), stng.vars.crash(e, 0)))
+
+
+
+	# the total number of crashes is at most k
+	s.add(Sum([If(stng.vars.crash(e,t-1), 1, 0) for e in g.E]) <= k)
+
+
+
+	# configuration variables -- m is on v at time i.
+	for m in M:
+		for v in stng.UFSv[m]:
+			for i in range(t+1):
+				stng.vars.setConfig(v,m,i)
+
+
+
+	# messages start at their origin
+	for m in M:
+		s.add(getUniqueConfigConstr(stng, m.s, m, 0))
+
+
+	for m in M:
+		for v in stng.FCv[m]:
+			for i in range(t):
+				#if a message reaches its destination, it stays there.
+				s.add(Implies(stng.vars.config(m.t, m, i), getUniqueConfigConstr(stng, m.t, m, i+1)))
+
+				e = g(v, v.nextF(m))
+				if not e:
+					assert(v == m.t)
+					continue
+
+				if S(e, i) == m:
+					# m is on v and edge e has not crashed. Move according to the schedule
+					a = And(stng.vars.config(v, m, i), Not(stng.vars.crash(e,i)))
+					s.add(Implies(a, getUniqueConfigConstr(stng, e.t, m, i+1)))
+				else:
+					# m is on v and edge e has not crashed but it is not time to move. Wait.
+					a = And(stng.vars.config(v, m, i), Not(stng.vars.crash(e,i)))
+					s.add(Implies(a, getUniqueConfigConstr(stng, v, m, i+1)))
+
+				if not v.nextS(m):
+					#no fall back edge, do nothing.
+					s.add(Implies(And(stng.vars.config(v, m, i), stng.vars.crash(e,i)), getUniqueConfigConstr(stng, v, m, i+1)))
+					continue
+
+				#m is on v and e has crashed.
+				x = And(stng.vars.config(v,m,i), stng.vars.crash(e, i))
+
+				# the fallback edge is free
+				fr = free(stng, g(v, v.nextS(m)), m, M, S, i)
+				# if it is not free, stay
+				stay = Implies(Not(fr), getUniqueConfigConstr(stng, v, m, i+1))
+				#if it is free, use it
+				move = Implies(fr, getUniqueConfigConstr(stng, v.nextS(m), m, i+1))
+				s.add(Implies(x, stay))
+				s.add(Implies(x, move))
+
+	for m in M:
+		for v in stng.SCv[m]:
+			#handled in the above
+			if v in stng.FCv[m]: continue
+
+			if not g(v, v.nextS(m)): continue
+
+			for i in range(t):
+				#m is on v
+				x = stng.vars.config(v,m,i)
+
+				# the fallback edge is free
+				fr = free(stng, g(v, v.nextS(m)), m, M, S, i)
+
+				# if it is not free, stay
+				stay = Implies(Not(fr), getUniqueConfigConstr(stng, v, m, i+1))
+				#if it is free, use it
+				move = Implies(fr, getUniqueConfigConstr(stng, v.nextS(m), m, i+1))
+				s.add(Implies(x, stay))
+				s.add(Implies(x, move))
+
+
+	if returnSolver:
+		s.push()
+
+	#less than l messages arrive
+	s.add(Sum([If(stng.vars.config(m.t, m, t), 1, 0) for m in M]) < l)
+
+
+
+def excludeCrashModel(stng,s,crash_model,t):
+	crashes = []
+	for e in g.E:
+		for i in range(t):
+			if is_true(crash_model[stng.vars.crash(e,i)]):
+				crashes.append(stng.vars.crash(e,i))
+				break
+	s.add(Not(And(crashes)))
+
+
+# Count number of fault sequence that performs at most k faults and in which less than l messages arrive
+def count_WFS(stng, S, M, t, l, k, immediatefailure=False):
+	s = Solver()
+
+	WFS_Constraints(stng,s, S, M, t, l, k, immediatefailure=immediatefailure)
+
+	counter = 0
+
+	while True:
+		if s.check() == sat:
+			crash_model = s.model()
+			counter += 1
+			excludeCrashModel(stng,s,crash_model,t)
+		else:
+			break
+
+	return counter
 
 
 if __name__ == '__main__':
@@ -737,6 +786,7 @@ if __name__ == '__main__':
 	showProgress = options.showProgress
 	weight = options.weight
 	diff = options.diff
+	countFaults = options.countFaults
 	n = int(sys.argv[1])
 	m = int(sys.argv[2])
 	e = int(sys.argv[3])
@@ -756,7 +806,7 @@ if __name__ == '__main__':
 	# main(n, m, e, t, k, l, filename=None, save=False, load=False, optimize=False, showProgress=False, weight=False):
 	# main(int(options.n), int(options.m), int(options.e), int(options.t), int(options.l), int(options.k))
 	# main(10, 30, 15, 7, 26, 1, filename, save=True, load=False, optimize=True, showProgress=True, weight=True)
-	exit_status = main(n,m,e,t,k,l,filename, save=save, load=load, optimize=optimize, showProgress=showProgress, weight=weight)
+	exit_status = main(n,m,e,t,k,l,filename, save=save, load=load, optimize=optimize, showProgress=showProgress, weight=weight, countFaults=countFaults)
 
 	if diff:
 		from diff_script import *
